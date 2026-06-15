@@ -113,15 +113,19 @@ class Coordinator:
                             self.algorithm_cond.notify()
 
     def ui_thread_func(self):
-        print("Interface do Usuário iniciada. Comandos: '1' para fila, '2' para contadores, '3' para sair.")
+        menu_text = "Comandos: '1' para fila, '2' para contadores, '3' para sair."
+        print(f"Interface do Usuário iniciada. {menu_text}")
         while self.running:
             try:
-                # Pequeno truque para não bloquear permanentemente e impedir shutdown limpo
                 if sys.stdin in [None]:
                     time.sleep(0.5)
                     continue
-                    
+                
+                # Exibe o menu novamente
+                print(f"\n{menu_text}")
+                print("Escolha uma opção: ", end="", flush=True)
                 cmd = input().strip()
+                
                 if cmd == '1':
                     queue_snapshot = self.state.get_queue_snapshot()
                     print(f"Fila de requisições atual: {queue_snapshot}")
@@ -135,6 +139,8 @@ class Coordinator:
                         self.algorithm_cond.notify_all()
                     self.server_socket.close()
                     break
+                else:
+                    print("Opção inválida.")
             except EOFError:
                 while self.running:
                     time.sleep(1.0)

@@ -6,7 +6,7 @@ def validate(n: int, r: int):
     
     # 1. Validar resultado.txt
     try:
-        with open("resultado.txt", "r") as f:
+        with open("resultado.txt", "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
     except FileNotFoundError:
         print("FALHA: O arquivo 'resultado.txt' não foi encontrado.")
@@ -46,7 +46,7 @@ def validate(n: int, r: int):
     # 2. Validar coordinator.log
     # c) Todo GRANT é seguido de um RELEASE do mesmo processo antes que outro GRANT seja emitido.
     try:
-        with open("coordinator.log", "r") as f:
+        with open("coordinator.log", "r", encoding="utf-8", errors="replace") as f:
             log_lines = f.readlines()
     except FileNotFoundError:
         print("FALHA: O arquivo 'coordinator.log' não foi encontrado.")
@@ -55,6 +55,8 @@ def validate(n: int, r: int):
     current_granted_process = None
     grant_count = 0
     release_count = 0
+    request_sequence = []
+    release_sequence = []
     
     for line in log_lines:
         if " - " not in line:
@@ -67,7 +69,11 @@ def validate(n: int, r: int):
         msg_type_str = parts[1].replace("[", "").replace("]", "")
         routing_str = parts[2] # Exemplo: "[0] -> [1]" ou "[1] -> [0]"
         
-        if msg_type_str == "GRANT":
+        if msg_type_str == "REQUEST":
+            src = int(routing_str.split("->")[0].replace("[", "").replace("]", "").strip())
+            request_sequence.append(src)
+            
+        elif msg_type_str == "GRANT":
             grant_count += 1
             if current_granted_process is not None:
                 print(f"FALHA [c]: VIOLAÇÃO DE EXCLUSÃO MÚTUA! Processo {current_granted_process} estava na Região Crítica quando um novo GRANT foi emitido.")
@@ -81,6 +87,7 @@ def validate(n: int, r: int):
             release_count += 1
             # Extrai o ID do processo de origem
             src = int(routing_str.split("->")[0].replace("[", "").replace("]", "").strip())
+            release_sequence.append(src)
             
             # Verifica se o RELEASE veio de quem realmente tinha o GRANT
             if current_granted_process == src:
@@ -89,6 +96,12 @@ def validate(n: int, r: int):
     if grant_count != expected_lines:
         print(f"FALHA: Houve um número incorreto de GRANTs no log. Esperado {expected_lines}, encontrado {grant_count}.")
         return False
+
+    if request_sequence != release_sequence:
+        print(f"FALHA: A ordem dos REQUESTs {request_sequence} não condiz com a ordem dos RELEASEs {release_sequence}.")
+        return False
+    else:
+        print("OK: A ordem das mensagens REQUEST é idêntica à ordem das mensagens RELEASE (Fila FIFO garantida).")
         
     print(f"OK: Encontrados {grant_count} GRANTs e {release_count} RELEASEs consistentes no 'coordinator.log'. Nenhuma violação de exclusão mútua!")
     print("\n>>> SUCESSO: O ALGORITMO FUNCIONA CORRETAMENTE! <<<")

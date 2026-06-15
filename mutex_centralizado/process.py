@@ -2,6 +2,7 @@ import socket
 import sys
 import time
 import argparse
+import random
 from datetime import datetime
 from protocol import format_message, parse_message, MessageType, MESSAGE_SIZE
 
@@ -21,6 +22,11 @@ def run_process(process_id: int, r: int, k: int):
 
         # 3. Lógica de Execução: Um loop que executa R vezes
         for iteration in range(r):
+            # Dormir aleatoriamente antes de fazer um request (3 a 4 segundos)
+            sleep_time = random.uniform(3.0, 4.0)
+            print(f"[{process_id}] Dormindo {sleep_time:.2f} segundos antes do REQUEST (Iteração {iteration + 1}/{r})")
+            time.sleep(sleep_time)
+
             # a) Envia REQUEST ao coordenador.
             req_msg = format_message(MessageType.REQUEST, process_id)
             sock.sendall(req_msg.encode('utf-8'))

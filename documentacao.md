@@ -45,7 +45,7 @@ Para garantir que as leituras de rede no socket sejam determinísticas e evitar 
 - **Formato**: `TIPO|ID_PROCESSO|ZEROS_DE_PREENCHIMENTO`
 - **Delimitador**: caractere pipe (`|`).
 - **Decisão**: O uso de preenchimento (`0` à direita) permite ler exatamente `16 bytes` (`conn.recv(16)`) de forma síncrona/bloqueante sem a necessidade de parsing complexo de streams.
-- **Implementação**: Localizada em [protocol.py](file:///Users/joaomachado/Projetos/ExclusaoMutuaSD/mutex_centralizado/protocol.py).
+- **Implementação**: Localizada em [protocol.py](./mutex_centralizado/protocol.py).
 
 ### 2.2. Concorrência Segura (Thread-Safety) no Coordenador
 O Coordenador utiliza threads separadas para tratar atividades simultâneas:
@@ -54,7 +54,7 @@ O Coordenador utiliza threads separadas para tratar atividades simultâneas:
 3. **Thread de Interface (UI)**: Gerencia o terminal para controle administrativo.
 
 #### Sincronização e Variáveis de Condição
-Para proteger as estruturas em memória (Fila de Requisições, Tabela de Conexões e Contadores), implementamos travas independentes em [coordinator_state.py](file:///Users/joaomachado/Projetos/ExclusaoMutuaSD/mutex_centralizado/coordinator_state.py):
+Para proteger as estruturas em memória (Fila de Requisições, Tabela de Conexões e Contadores), implementamos travas independentes em [coordinator_state.py](./mutex_centralizado/coordinator_state.py):
 - `_queue_lock`: Protege a fila de requisições (`deque`).
 - `_connections_lock`: Protege a tabela de mapeamento ID -> Socket.
 - `_counters_lock`: Protege a estatística de atendimentos dos processos.
@@ -64,10 +64,12 @@ Na thread do algoritmo, usamos um **Lock de Região Crítica** associado a uma *
 - Quando uma thread de cliente envia um `REQUEST` ou um `RELEASE`, ela acorda a thread do algoritmo através de `cond.notify()`. Isso elimina o consumo excessivo de CPU causado por loops de espera ativa (*busy-waiting*).
 
 ### 2.3. Lógica do Processo Cliente
-Os processos clientes executam um loop sequencial simples, porém robusto:
+Os processos clientes executam um loop sequencial robusto:
 - Abrem uma conexão TCP persistente com o Coordenador.
+- **Dormem um tempo aleatório entre 3 e 4 segundos** (`random.uniform(3.0, 4.0)`) antes de enviar cada requisição (`REQUEST`), de forma a simular processamento local e evitar rajadas concorrentes instantâneas.
 - Ao enviar um `REQUEST`, bloqueiam na leitura do socket (`sock.recv(16)`). O sistema operacional suspende o processo até que o coordenador escreva o `GRANT`.
-- O acesso à região crítica é simulado pela escrita atômica (modo append) no arquivo compartilhado `resultado.txt`, seguido de um `time.sleep(K)`.
+- O acesso à região crítica é simulado pela escrita atômica (modo append) no arquivo compartilhado `resultado.txt`, seguido de um `time.sleep(K)` (tempo em segundos na RC).
+- Ao final, enviam o `RELEASE` para o Coordenador para liberar o acesso.
 
 ---
 
@@ -76,10 +78,10 @@ Os processos clientes executam um loop sequencial simples, porém robusto:
 ### Caso de Uso 1: Acesso Imediato à Região Crítica
 * **Atores**: Cliente 1, Coordenador.
 * **Pré-condições**: Região crítica está livre e a fila está vazia.
-1. O **Cliente 1** envia uma mensagem `REQUEST`.
+1. O **Cliente 1** dorme de 3 a 4 segundos e envia uma mensagem `REQUEST`.
 2. A Thread de Rede do **Coordenador** recebe a mensagem, adiciona o **Cliente 1** na fila e notifica o Algoritmo.
 3. O **Coordenador** consome o ID da fila, bloqueia a Região Crítica e envia de volta um `GRANT`.
-4. O **Cliente 1** desbloqueia o seu `recv`, grava em `resultado.txt` e inicia o processamento temporizado.
+4. O **Cliente 1** desbloqueia o seu `recv`, grava em `resultado.txt` e inicia o processamento temporizado de `K` segundos.
 
 ### Caso de Uso 2: Enfileiramento por Concorrência
 * **Atores**: Cliente 2, Coordenador.
@@ -94,18 +96,19 @@ Os processos clientes executam um loop sequencial simples, porém robusto:
 * **Pré-condições**: Cliente 1 está na RC; Cliente 2 está aguardando na fila.
 1. O **Cliente 1** termina o processamento e envia a mensagem `RELEASE`.
 2. O **Coordenador** recebe a mensagem, marca a região crítica como livre (`is_cs_free = True`) e notifica a Thread do Algoritmo.
-3. O Algoritmo do **Coordenador** acorda, remove o **Cliente 2** (topo da fila) e o concede acesso enviando um `GRANT`.
+3. O Algoritmo do **Coordenador** acorda, remove o **Cliente 2** (topo da fila) e concede acesso enviando um `GRANT`.
 4. O **Cliente 2** assume o controle da Região Crítica.
 
 ---
 
 ## 4. Validação e Execução
 
-### Script de Automação (`run.sh`)
-Responsável por orquestrar a execução do ecossistema:
-- Inicia o Coordenador com o terminal desacoplado (`python -u`).
-- Lança simultaneamente $N$ processos com parâmetros parametrizados.
-- Encerra de forma segura todos os processos e limpa os arquivos após a conclusão.
+### Script de Automação (`run.py`)
+Responsável por orquestrar a execução do ecossistema de forma multiplataforma:
+- Limpa arquivos antigos (`coordinator.log` e `resultado.txt`).
+- Inicia o Coordenador (`coordinator.py`) em segundo plano redirecionando a saída para `coordinator.log`.
+- Lança simultaneamente $N$ processos cliente com parâmetros configurados via argumentos CLI.
+- Aguarda a conclusão dos processos clientes e encerra o coordenador graciosamente.
 
 ### Script Validador (`validator.py`)
 Garante as seguintes propriedades formais após uma execução de teste:
@@ -121,9 +124,12 @@ Garante as seguintes propriedades formais após uma execução de teste:
 
 1. Para executar o ecossistema com **5 clientes**, **3 acessos** por cliente e tempo de espera de **1 segundo** na região crítica:
    ```bash
-   ./run.sh 5 3 1
+   python run.py 5 3 1
    ```
+   *(Ou `py run.py 5 3 1` no Windows)*
+
 2. Para rodar a verificação matemática de exclusão mútua nos arquivos gerados:
    ```bash
    python validator.py 5 3
    ```
+   *(Ou `py validator.py 5 3` no Windows)*
