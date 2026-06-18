@@ -8,7 +8,7 @@ class MessageType(Enum):
     RELEASE = 3
 
 def format_message(msg_type: MessageType, process_id: int) -> str:
-    """Formata a mensagem para um tamanho fixo com preenchimento de zeros."""
+    ##Formata a mensagem para um tamanho fixo.
     base_msg = f"{msg_type.value}|{process_id}|"
     if len(base_msg) > MESSAGE_SIZE:
         raise ValueError("O conteúdo da mensagem excede o tamanho fixo máximo.")
@@ -19,7 +19,7 @@ def format_message(msg_type: MessageType, process_id: int) -> str:
     return base_msg + padding
 
 def parse_message(message: str) -> tuple[MessageType, int]:
-    """Decodifica a mensagem em formato string, retornando o tipo e o ID do processo."""
+    #Decodifica a mensagem em formato string, retornando o tipo e o ID do processo.
     if len(message) != MESSAGE_SIZE:
         raise ValueError(f"Tamanho de mensagem inválido. Esperado {MESSAGE_SIZE}, obtido {len(message)}")
     
