@@ -16,7 +16,6 @@ class Coordinator:
         self.state = CoordinatorState()
         self.is_cs_free = True
         self.cs_lock = threading.Lock()
-        self.algorithm_cond = threading.Condition(self.cs_lock)
         
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -26,6 +25,8 @@ class Coordinator:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         print(f"\n[{timestamp}] - [{msg_type}] - [{src}] -> [{dest}]")
 
+    
+    #Thread de rede (recebe mensagens)
     def handle_client(self, conn: socket.socket, addr):
         try:
             while self.running:
@@ -44,15 +45,17 @@ class Coordinator:
 
                 if msg_type == MessageType.REQUEST:
                     self.log("REQUEST", process_id, COORDINATOR_ID)
-                    self.state.enqueue_request(process_id)
-                    with self.algorithm_cond:
-                        self.algorithm_cond.notify()
+                    
+                    # O Lock é usado estritamente para escrever/alterar a fila
+                    with self.cs_lock:
+                        self.state.enqueue_request(process_id)
 
                 elif msg_type == MessageType.RELEASE:
                     self.log("RELEASE", process_id, COORDINATOR_ID)
-                    with self.algorithm_cond:
+                    
+                    # O Lock é usado estritamente para alterar o estado da variável
+                    with self.cs_lock:
                         self.is_cs_free = True
-                        self.algorithm_cond.notify()
 
         except ConnectionResetError:
             pass
@@ -77,40 +80,39 @@ class Coordinator:
                 if self.running:
                     print(f"Erro no accept da rede: {e}")
 
+    # Thread de algoritmo de exclusão mútua
+
     def algorithm_thread_func(self):
         while self.running:
-            with self.algorithm_cond:
-                # Espera até que a RC esteja livre e a fila não esteja vazia, ou até encerrar
-                while self.running and not (self.is_cs_free and not self.state.is_queue_empty()):
-                    self.algorithm_cond.wait(timeout=1.0)
-                
-                if not self.running:
-                    break
-                
+            
+            time.sleep(0.01) 
+            
+            process_id_to_grant = None
+            
+            # O Lock é adquirido apenas para ler e remover da fila
+
+            with self.cs_lock:
                 if self.is_cs_free and not self.state.is_queue_empty():
-                    process_id = self.state.dequeue_request()
-                    if process_id is not None:
-                        # Pega o lock da região crítica (marca como ocupada)
-                        self.is_cs_free = False
+                    process_id_to_grant = self.state.dequeue_request()
+                    if process_id_to_grant is not None:
+                        self.is_cs_free = False # Ocupa a Região Crítica
+            
+            # O envio do GRANT ocorre FORA do Lock!
+            if process_id_to_grant is not None:
+                conn_info = self.state.get_connection(process_id_to_grant)
+                if conn_info:
+                    conn, _ = conn_info
+                    try:
+                        grant_msg = format_message(MessageType.GRANT, COORDINATOR_ID)
+                        conn.sendall(grant_msg.encode('utf-8'))
+                        self.log("GRANT", COORDINATOR_ID, process_id_to_grant)
+                        self.state.increment_counter(process_id_to_grant)
+                    except Exception as e:
+                        print(f"Falha ao enviar GRANT para o processo {process_id_to_grant}: {e}")
+                        # Caso falhe a rede, devolvemos a Região Crítica para livre
                         
-                        # Envia GRANT
-                        conn_info = self.state.get_connection(process_id)
-                        if conn_info:
-                            conn, _ = conn_info
-                            try:
-                                grant_msg = format_message(MessageType.GRANT, COORDINATOR_ID)
-                                conn.sendall(grant_msg.encode('utf-8'))
-                                self.log("GRANT", COORDINATOR_ID, process_id)
-                                self.state.increment_counter(process_id)
-                            except Exception as e:
-                                print(f"Falha ao enviar GRANT para o processo {process_id}: {e}")
-                                # Se falhar, liberamos a RC novamente
-                                self.is_cs_free = True
-                                self.algorithm_cond.notify()
-                        else:
-                            # Se a conexão não existe, ignora o processo e libera a RC
+                        with self.cs_lock:
                             self.is_cs_free = True
-                            self.algorithm_cond.notify()
 
     def ui_thread_func(self):
         menu_text = "Comandos: '1' para fila, '2' para contadores, '3' para sair."
