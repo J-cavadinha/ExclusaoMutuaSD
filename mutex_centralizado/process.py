@@ -10,7 +10,7 @@ HOST = '127.0.0.1'
 PORT = 5000
 
 def run_process(process_id: int, r: int, k: int):
-    # 1. Conectar ao coordenador
+    # Conectar ao coordenador
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
             sock.connect((HOST, PORT))
@@ -20,19 +20,19 @@ def run_process(process_id: int, r: int, k: int):
 
         print(f"Processo {process_id} conectado ao coordenador.")
 
-        # 3. Lógica de Execução: Um loop que executa R vezes
+        # loop que executa R vezes
         for iteration in range(r):
-            # Dormir aleatoriamente antes de fazer um request (3 a 4 segundos)
+            # Dormir aleatoriamente antes de fazer um request
             sleep_time = random.uniform(3.0, 4.0)
             print(f"[{process_id}] Dormindo {sleep_time:.2f} segundos antes do REQUEST (Iteração {iteration + 1}/{r})")
             time.sleep(sleep_time)
 
-            # a) Envia REQUEST ao coordenador.
+            # Envia REQUEST ao coordenador.
             req_msg = format_message(MessageType.REQUEST, process_id)
             sock.sendall(req_msg.encode('utf-8'))
             print(f"[{process_id}] Enviou REQUEST (Iteração {iteration + 1}/{r})")
 
-            # b) Aguarda de forma bloqueante a recepção do GRANT.
+            # Aguarda de forma bloqueante a recepção do GRANT.
             # O recv vai bloquear a thread até receber os 16 bytes.
             data = sock.recv(MESSAGE_SIZE)
             if not data:
@@ -45,17 +45,17 @@ def run_process(process_id: int, r: int, k: int):
             if msg_type == MessageType.GRANT:
                 print(f"[{process_id}] Recebeu GRANT")
                 
-                # c) Abre o arquivo 'resultado.txt' no modo APPEND.
-                # d) Escreve uma linha com: ID_PROCESSO TIMESTAMP_SISTEMA_COM_MILISEGUNDOS.
-                # e) Fecha o arquivo (resolvido automaticamente pelo 'with open').
+                # Abre o arquivo 'resultado.txt' no modo APPEND.
+                # Escreve uma linha com: ID_PROCESSO TIMESTAMP_SISTEMA_COM_MILISEGUNDOS.
+                # Fecha o arquivo (resolvido automaticamente pelo 'with open').
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                 with open("resultado.txt", "a", encoding="utf-8") as f:
                     f.write(f"{process_id} {timestamp}\n")
                 
-                # f) Executa sleep(K segundos).
+                # Executa sleep(K segundos).
                 time.sleep(k)
                 
-                # g) Envia RELEASE ao coordenador.
+                # Envia RELEASE ao coordenador.
                 rel_msg = format_message(MessageType.RELEASE, process_id)
                 sock.sendall(rel_msg.encode('utf-8'))
                 print(f"[{process_id}] Enviou RELEASE")
@@ -64,7 +64,7 @@ def run_process(process_id: int, r: int, k: int):
                 break
 
         print(f"Processo {process_id} finalizou todas as {r} iterações. Fechando conexão.")
-        # 4. Após o loop, o processo encerra a conexão e fecha (tratado automaticamente pelo 'with socket').
+        #  Apos loop, o processo encerra a conexão e fecha
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Processo Cliente para Exclusão Mútua Centralizada")
