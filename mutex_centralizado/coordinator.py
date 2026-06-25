@@ -137,8 +137,6 @@ class Coordinator:
                 elif cmd == '3':
                     print("Encerrando o coordenador...")
                     self.running = False
-                    with self.algorithm_cond:
-                        self.algorithm_cond.notify_all()
                     self.server_socket.close()
                     break
                 else:
